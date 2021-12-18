@@ -451,26 +451,34 @@ function resolveNewConflicts(car){
 }
 
 function dispatch(passenger){
-  var closest = {x: 2*gridSize, y: 2*gridSize, id: -1};
-  var lastCar;
-  do{
-    lastCar = closest;
-    var d = Math.abs(passenger.homeX-closest.x)+Math.abs(passenger.homeY-closest.y);
-    //console.log(closest.x, closest.y, d)
-    closest = cars.find(car => {
-      if(Math.abs(passenger.homeX-car.x)+Math.abs(passenger.homeY-car.y) < d && !car.passenger){
-        return car;
-      }
+  var que = [{x: passenger.homeX, y: passenger.homeY, i: 0, direction: {x: 0, y: 0}}];
+  var i = 0;
+  var car = -1;
+  var direction = {x: 0, y: 0};
+  while(car < 0){
+    i++;
+    que.forEach(function(cell){
+      var cells = adjacent(cell.x, cell.y);
+      cells.forEach(function(res){
+        var next = {x: res.x, y: res.y, i: i, direction: {next.x-cell.x, y: next.y-cell.y}};
+        if(grid[next.x][next.y].open && !que.some(p => {return p.x === next.x && p.y === next.y})){
+          var conflict = cars.find(nextCar => {
+            if(nextCar.path.some(nextCell => {return nextCell.x === next.x && nextCell.y === next.y && nextCell.i === next.i})){
+              return nextCar;
+            }
+          });
+          if(conflict){
+            var conflictDirection = conflict.path.find(nextCell => {
+              if(nextCell.x === next.x && nextCell.y === next.y && nextCell.i === next.i) return nextCell
+            }).direction;
+            if(conflictDirection.x){
+              
+            }
+          }
+        }
+      });
     });
-    if(!closest){
-      closest = lastCar;
-    }
-  }while(closest.id !== lastCar.id)
-  closest.passenger = passenger;
-  closest.status = 1;
-  passenger.car = closest;
-  passenger.status = 1;
-  //console.log(closest.x, closest.y, passenger);
+  }
 }
 
 function setupGrid(){
