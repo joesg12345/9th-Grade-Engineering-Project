@@ -451,26 +451,39 @@ function resolveNewConflicts(car){
 }
 
 function dispatch(passenger){
-  var closest = {x: 2*gridSize, y: 2*gridSize, id: -1};
-  var lastCar;
-  do{
-    lastCar = closest;
-    var d = Math.abs(passenger.homeX-closest.x)+Math.abs(passenger.homeY-closest.y);
-    //console.log(closest.x, closest.y, d)
-    closest = cars.find(car => {
-      if(Math.abs(passenger.homeX-car.x)+Math.abs(passenger.homeY-car.y) < d && !car.passenger){
-        return car;
+  var queue = [{x: passenger.homeX, y: passenger.homeY, i: 0}];
+  var i = 0;
+  var car = carAt(passenger.homeX, passenger.homeY).find(nextCar => {if(!nextCar.passenger) return nextCar});
+  //console.log("started searching for car");
+  while(!car){
+    i++;
+    var filtered = queue.filter(filterCell => {return filterCell.i === i-1});
+    //console.log(queue, filtered);
+    filtered.forEach(function(cell){
+      var cells = adjacent(cell.x, cell.y);
+      //console.log(cell, cells);
+      cells.forEach(function(res){
+        var next = {x: res.x, y: res.y, i: i};
+        if(grid[next.x][next.y].open && !queue.some(p => {return p.x === next.x && p.y === next.y}) && !car){
+          queue.push(next);
+          //console.log(carAt(next.x, next.y), next.x, next.y);
+          car = carAt(next.x, next.y).find(nextCar => {if(!nextCar.passenger) return nextCar});
+        }
+        if(car){
+          return
+        }
+      });
+      if(car){
+        return;
       }
     });
-    if(!closest){
-      closest = lastCar;
-    }
-  }while(closest.id !== lastCar.id)
-  closest.passenger = passenger;
-  closest.status = 1;
-  passenger.car = closest;
+  }
+  //console.log(car.x, car.y, passenger);
+  //console.log(`dispatched car ${car.id} to passenger ${passenger.id}`);
+  car.passenger = passenger;
+  car.status = -1;
+  passenger.car = car;
   passenger.status = 1;
-  //console.log(closest.x, closest.y, passenger);
 }
 
 function setupGrid(){
@@ -604,7 +617,7 @@ function logGrid(){
     var row = "";
     for(var x = 0; x < gridSize; x++){
       if(grid[x][y].open){
-        if(~carAt(x, y)){
+        if(carAt(x, y).length){
           row += "--"
         }
         else if(passAt(x, y, true) && passAt(x, y, false)){
@@ -650,7 +663,7 @@ function generateCars(inDraw){
  * @returns {number} The index of the found car in the cars array, or -1 if no car is found
  */
 function carAt(x, y){
-  return cars.findIndex(car => {return car && car.x === x && car.y === y});
+  return cars.filter(car => {return car.x === x && car.y === y});
 }
 
 /**Finds the passenger with a home or destination located at the specified coordinates
@@ -674,7 +687,8 @@ function generatePassengers(){
     homePicker:
     while(true){
       home = openForPass[rand(0, openForPass.length)];
-      if(~carAt(home.x, home.y) && cars[carAt(home.x, home.y)].passenger){
+      var cars = carAt(home.x, home.y);
+      if(cars.some(car => {return car.passenger !== null})){
         openForPass.splice(openForPass.findIndex(cell => {return cell.x === home.x && cell.y === home.y}), 1);
       }
       else{
@@ -684,7 +698,7 @@ function generatePassengers(){
     var dest;
     do{
       dest = roads[rand(0, roads.length)];
-    }while(Math.abs(home.x - dest.x)+Math.abs(home.y - dest.y)<10)
+    }while(Math.abs(home.x - dest.x)+Math.abs(home.y - dest.y)<5)
     passengers.push(new Passenger(home.x, home.y, dest.x, dest.y, passengers.length+deliveryCt));
   }
 }
