@@ -25,7 +25,7 @@ var gridSize = 11;
 /**The number of blocks/obstacles to place on roads*/
 var obstCt = 20;
 /**The number of cars/agent to create */
-var carCt = 1;
+var carCt = 4;
 /**Then number of passengers that must be delivered */
 var passCt = 80;
 
@@ -35,7 +35,7 @@ var deliveryCt = 0;
 /**The length of a cell */
 var cellSize;
 /**How many frames per timestep */
-var stepSize = 10;
+var stepSize = 20;
 /**Timesteps elapsed during execution time*/
 var timestep = 0;
 /**Total timestep cost of all agents paths/actions */
@@ -82,63 +82,78 @@ class Car{
   pathfind(){
     //if passenger has been received
     console.log("started pathfinding");
-    if(this.passenger.status === 2){
-      //add passenger destination to que
-      this.que = [{x: this.passenger.destX, y: this.passenger.destY, i: 0, direction: {x: 0, y: 0}}];
-      /**Number of timesteps from now*/
-      var i = 0;
-      /**Whether a path to the destination has been found */
-      var found = false;
-      while(!found){
-        i++;
-        //iterate over all cells from the last timestep checked
-        var filtered = this.que.filter(filterCell => {return filterCell.i === i-1});
-        filtered.forEach(function(cell){
-          var cells = adjacent(cell.x, cell.y);
-          //iterate over adjacent cells
-          cells.forEach(function(res){
-            /**Cell being checked*/
-            var next = {x: res.x, y: res.y, i: i, direction: {x: res.x-cell.x, y: res.y-cell.y}};
-            //if open and unexplored
-            if(grid[next.x][next.y].open && !this.que.some(p => {return p.x === next.x && p.y === next.y})){
-              /**Car planned to be at same location at same timestep */
-              var conflict = cars.find(nextCar => {if(nextCar.path.some(nextCell => {return nextCell.x === next.x && nextCell.y === next.y && nextCell.i - nextCar.status === next.i})) return nextCar});
-              //if there is a conflict
-              if(conflict){
-                /**Direction the conflicting car is traveling at the time of conflict*/
-                var conflictDirection = conflict.path.find(nextCell => {if(nextCell.x === next.x && nextCell.y === next.y && nextCell.i - conflict.status === next.i) return nextCell}).direction;
-                //if not: one but not both vectors are the same (traveling in opposite directions)
-                if(!(conflictDirection.x === next.direction.x || conflictDirection.y === next.direction.y) || (conflictDirection.x === next.direction.x && conflictDirection.y === next.direction.y)){
-                  console.table(conflict.path);
-                  console.log(conflict.status, next);
-                  //add last cell to que again
-                  this.que.push({x: cell.x, y: cell.y, i: i, direction: cell.direction});
-                }
-                else{
-                  this.que.push(next);
-                  //checks if this car has been found yet
-                  found = next.x === this.x && next.y === this.y;
-                }
+    /**The destination of the path*/
+    var dest = (this.passenger.status === 1 ? {x: this.passenger.homeX, y: this.passenger.homeY} : {x: this.passenger.destX, y: this.passenger.destY});
+    //add current position to que
+    this.que = [{x: this.x, y: this.y, i: 0, direction: {x: 0, y: 0}}];
+    /**Number of timesteps from now*/
+    var i = 0;
+    /**Whether a path to the destination has been found */
+    var found = this.x === dest.x && this.y === dest.y;
+    while(!found){
+      i++;
+      //iterate over all cells from the last timestep checked
+      var filtered = this.que.filter(filterCell => {return filterCell.i === i-1});
+      filtered.forEach(function(cell){
+        var cells = adjacent(cell.x, cell.y);
+        //iterate over adjacent cells
+        cells.forEach(function(res){
+          /**Next cell to be checked*/
+          var next = {x: res.x, y: res.y, i: i, direction: {x: res.x-cell.x, y: res.y-cell.y}};
+          //if open and unexplored
+          if(grid[next.x][next.y].open && !this.que.some(p => {return p.x === next.x && p.y === next.y})){
+            var statusOffset;
+            /**Agents planned to be at same location as this at same timestep */
+            var conflict = cars.find(nextCar => {
+              //agents that have already been processed this timestep will have already set their positions to their next planned positions, but to find the next position of one that hasn't been processed, the index to search must be incremented
+              statusOffset = (nextCar.passenger && nextCar.passenger.id > this.passenger.id ? 1 : 0);
+              if(nextCar.id !== this.id && nextCar.path.some(nextCell => {
+                var nextI = nextCell.i - nextCar.status + statusOffset;
+                //same position, AND same timestep OR (timestep difference 1 AND final timestep): final timstep in path means that next timestep the car will be parked to let a passenger on or off
+                return nextCell.x === next.x && nextCell.y === next.y && (nextI === next.i || (nextI+1 === next.i && nextI === nextCar.path.length-1));
+              })) return nextCar
+            });
+            //if there is a conflict
+            if(conflict){
+              /**Direction the conflicting agent is traveling at the time of conflict*/
+              var conflictDirection = conflict.path.find(nextCell => {
+                var nextI = nextCell.i - conflict.status + statusOffset;
+                if(nextCell.x === next.x && nextCell.y === next.y && (nextI === next.i || (nextI+1 === next.i && nextI === conflict.path.length-1))) return nextCell;
+              }).direction;
+              //if one vector is a nonzero opposite and the other is zero
+              if(!((conflictDirection.x && conflictDirection.x === -next.direction.x && !conflictDirection.y) || (conflictDirection.y && conflictDirection.y === -next.direction.y && !conflictDirection.x))){
+                console.log("conflict found");
+                //console.table(conflict.path);
+                //console.log(conflict.status, next);
+                //add last cell to que again
+                console.log(cell)
+                this.que.push({x: cell.x, y: cell.y, i: i, direction: cell.direction});
               }
-              else{
+              else if(!found){
                 this.que.push(next);
-                if(!found){
-                  found = next.x === this.x && next.y === this.y;
-                }
+                console.log(next);
+                //checks if this car has been found yet
+                found = next.x === dest.x && next.y === dest.y;
               }
             }
-            if(found){
-              return;
+            else if(!found){
+              this.que.push(next);
+              console.log(next);
+              found = next.x === dest.x && next.y === dest.y;
             }
-          }, this);
+          }
           if(found){
             return;
           }
         }, this);
-      }
+        if(found){
+          return;
+        }
+      }, this);
     }
+    //console.table(this.que);
     //start path with last element of que (the position of this car)
-    this.path = [this.que.find(cell => {if(cell.x === this.x && cell.y === this.y) return cell})];
+    this.path = [this.que.find(cell => {if(cell.x === dest.x && cell.y === dest.y) return cell})];
     var i = this.path[0].i;
     //iterate backwards through cells in que
     for(var ii = i-1; ii >= 0; ii--){
@@ -147,11 +162,16 @@ class Car{
       var cell = this.que.find(nextCell => {if(nextCell.i === ii && (adjacent(nextCell.x, nextCell.y).find(adj => {if(adj.x === lastCell.x && adj.y === lastCell.y) return adj}) || (nextCell.x === lastCell.x && nextCell.y === lastCell.y))) return nextCell});
       this.path.push(cell);
     }
+    this.path.reverse();
     if(this.sprite){
-      this.sprite.pointTo(this.path[1].x*cellSize+cellSize/2, this.path[1].y*cellSize+cellSize/2);
+      var firstCell = this.path.find(cell => {if(!(cell.x === this.x && cell.y === this.y)) return cell});
+      if(firstCell){
+        this.sprite.pointTo(firstCell.x*cellSize+cellSize/2, firstCell.y*cellSize+cellSize/2);
+      }
     }
     this.status = -1;
-    console.log("path found");
+    //console.table(this.path);
+    //console.log("path found");
   }
 }
 
@@ -195,8 +215,10 @@ function setup(){
 function draw(){
   background("green");
   if(testStart){
-    generatePassengers();
-    doDrive();
+    if(frameCount % stepSize === 0){
+      generatePassengers();
+      doDrive();
+    }
   }
   else{
     renderInstructions();
@@ -303,7 +325,7 @@ function doTests(){
 function renderInstructions(){
   textSize(50);
   textAlign(CENTER, CENTER);
-  text(instructions, 50, 50, 900, 400);
+  text(instructions, 25, 50, 925, 400);
 }
 
 function renderGrid(){
@@ -338,64 +360,64 @@ function renderGrid(){
 }
 
 function doDrive(){
-  if(frameCount % stepSize === 0){
-    var passengersDelivered = [];
-    passengers.forEach(function(passenger){
-      if(!passenger.car){
-        console.log("car needed")
-        dispatch(passenger);
-      }
-      var car = passenger.car
-      if(!car.path.length){
-        car.pathfind();
-      }
-      car.status++;
-      //TODO give priority to car in front instead of first checked
-      if(car.path.length - car.status > 1){
-        var next = car.path[car.status+1];
-        var current = car.path[car.status];
+  var passengersDelivered = [];
+  passengers.forEach(function(passenger){
+    if(!passenger.car){
+      //console.log("car needed")
+      dispatch(passenger);
+    }
+    var car = passenger.car
+    if(!car.path.length){
+      car.pathfind();
+    }
+    car.status++;
+    //TODO give priority to car in front instead of first checked
+    if(car.path.length - car.status > 1){
+      var next = car.path[car.status+1];
+      var current = car.path[car.status];
+      car.sprite.setVelocity((next.x - current.x)*cellSize/stepSize, (next.y - current.y)*cellSize/stepSize);
+      if(!(car.x === next.x && car.y === next.y)){
+        car.sprite.pointTo(next.x*cellSize + cellSize/2, next.y*cellSize + cellSize/2);
         car.x = next.x;
         car.y = next.y;
-        car.sprite.setVelocity((next.x - current.x)*cellSize/stepSize, (next.y - current.y)*cellSize/stepSize);
-        car.sprite.pointTo(next.x*cellSize + cellSize/2, next.y*cellSize + cellSize/2);
+      }
+    }
+    else{
+      car.sprite.setVelocity(0, 0);
+      if(passenger.status === 1){
+        passenger.status = 2;
+        car.que = [];
+        car.path = [];
+        car.sprite.draw = function(){
+          noStroke();
+          fill("white");
+          rect(0, cellSize/4, cellSize/2, cellSize/4);
+          fill("blue");
+          ellipse(0, cellSize/4, cellSize/4);
+        }
       }
       else{
-        car.sprite.setVelocity(0, 0);
-        if(passenger.status === 1){
-          passenger.status = 2;
+        deliveryCt++;
+        passengersDelivered.push(passenger.id);
+        car.passenger = null;
+        if(deliveryCt + passengers.length >= passCt){
+          car.sprite.remove();
+        }
+        else{
           car.que = [];
           car.path = [];
           car.sprite.draw = function(){
             noStroke();
             fill("white");
             rect(0, cellSize/4, cellSize/2, cellSize/4);
-            fill("blue");
-            ellipse(0, cellSize/4, cellSize/4);
-          }
-        }
-        else{
-          deliveryCt++;
-          passengersDelivered.push(passenger.id);
-          car.passenger = null;
-          if(deliveryCt + passengers.length >= passCt){
-            car.sprite.remove();
-          }
-          else{
-            car.que = [];
-            car.path = [];
-            car.sprite.draw = function(){
-              noStroke();
-              fill("white");
-              rect(0, cellSize/4, cellSize/2, cellSize/4);
-            }
           }
         }
       }
-    });
-    passengersDelivered.forEach(function(passID){
-      passengers.splice(passengers.findIndex(pass => {return pass.id === passID}), 1);
-    });
-  }
+    }
+  });
+  passengersDelivered.forEach(function(passID){
+    passengers.splice(passengers.findIndex(pass => {return pass.id === passID}), 1);
+  });
   if(frameCount % (stepSize*10) === 0 && deliveryCt === passCt){
     grid = [[]];
     testStart = false;
@@ -405,11 +427,11 @@ function doDrive(){
 }
 
 function dispatch(passenger){
-  var que = [{x: passenger.homeX, y: passenger.homeY, i: 0, direction: {x: 0, y: 0}}];
+  var que = [{x: passenger.homeX, y: passenger.homeY, i: 0}];
   var i = 0;
-  var car = -1;
+  var car = carAt(passenger.homeX, passenger.homeY).find(nextCar => {if(!nextCar.passenger) return nextCar});
   console.log("started searching for car");
-  while(car < 0){
+  while(!car){
     i++;
     var filtered = que.filter(filterCell => {return filterCell.i === i-1});
     //console.log(que, filtered);
@@ -417,52 +439,30 @@ function dispatch(passenger){
       var cells = adjacent(cell.x, cell.y);
       //console.log(cell, cells);
       cells.forEach(function(res){
-        var next = {x: res.x, y: res.y, i: i, direction: {x: res.x-cell.x, y: res.y-cell.y}};
-        if(grid[next.x][next.y].open && !que.some(p => {return p.x === next.x && p.y === next.y})){
-          var conflict = cars.find(nextCar => {
-            if(nextCar.path.some(nextCell => {return nextCell.x === next.x && nextCell.y === next.y && nextCell.i - nextCar.status === next.i})) return nextCar;});
-          if(conflict){
-            //console.log(conflict.id);
-            var conflictDirection = conflict.path.find(nextCell => {
-              if(nextCell.x === next.x && nextCell.y === next.y && nextCell.i - conflict.status === next.i) return nextCell
-            }).direction;
-            if(!(conflictDirection.x === next.direction.x || conflictDirection.y === next.direction.y) || (conflictDirection.x === next.direction.x && conflictDirection.y === next.direction.y)){
-              console.table(conflict.path);
-              console.log(conflict.status, next);
-              que.push({x: cell.x, y: cell.y, i: i, direction: cell.direction});
-            }
-            else if(car < 0){
-              que.push(next);
-              car = carAt(next.x, next.y);
-            }
-          }
-          else if(car < 0){
-            que.push(next);
-            car = carAt(next.x, next.y);
-          }
+        var next = {x: res.x, y: res.y, i: i};
+        if(grid[next.x][next.y].open && !que.some(p => {return p.x === next.x && p.y === next.y}) && !car){
+          que.push(next);
+          //console.log(carAt(next.x, next.y), next.x, next.y);
+          car = carAt(next.x, next.y).find(nextCar => {if(!nextCar.passenger) return nextCar});
         }
-        if(~car && !cars[car].passenger){
+        if(car){
           return
         }
-        else{
-          car = -1;
-        }
       });
-      if(~car){
+      if(car){
         return;
       }
     });
   }
-  car = cars[car];
   //console.log(car.x, car.y, passenger);
   console.log(`dispatched car ${car.id} to passenger ${passenger.id}`);
-  car.que = que;
   car.passenger = passenger;
-  car.status = 1;
+  car.status = -1;
   passenger.car = car;
   passenger.status = 1;
 }
 
+/**Generates environment grid*/
 function setupGrid(){
   //reset environment
   passengers = [];
@@ -530,6 +530,7 @@ function setupGrid(){
   });
 }
 
+//event that triggers when the window is resized
 function windowResized(){
   resizeCanvas(smallDim(), smallDim());
   orientButtons();
@@ -594,7 +595,7 @@ function logGrid(){
     var row = "";
     for(var x = 0; x < gridSize; x++){
       if(grid[x][y].open){
-        if(~carAt(x, y)){
+        if(carAt(x, y).length){
           row += "--"
         }
         else if(passAt(x, y, true) && passAt(x, y, false)){
@@ -640,7 +641,7 @@ function generateCars(inDraw){
  * @returns {number} The index of the found car in the cars array, or -1 if no car is found
  */
 function carAt(x, y){
-  return cars.findIndex(car => {return car && car.x === x && car.y === y});
+  return cars.filter(car => {return car.x === x && car.y === y});
 }
 
 /**Finds the passenger with a home or destination located at the specified coordinates
@@ -653,11 +654,11 @@ function passAt(x, y, home){
   return passengers.find(passenger => {if((home && passenger.homeX === x && passenger.homeY === y) || (!home && passenger.destX === x && passenger.destY === y)) return passenger});
 }
 
-/** */
+/**Generates passengers as agents become available */
 function generatePassengers(){
   /**The roads that are open for passengers*/
   var openForPass = roads;
-  console.log();
+  //console.log(openForPass.length);
   /**The roads that are open for passenger destinations */
   var openForDest = roads;
   while(passengers.length < carCt && passengers.length+deliveryCt < passCt){
@@ -666,18 +667,21 @@ function generatePassengers(){
     homePicker:
     while(true){
       home = openForPass[rand(0, openForPass.length)];
-      if(~carAt(home.x, home.y) && cars[carAt(home.x, home.y)].passenger){
+      var cars = carAt(home.x, home.y);
+      if(cars.some(car => {return car.passenger !== null})){
         openForPass.splice(openForPass.findIndex(cell => {return cell.x === home.x && cell.y === home.y}), 1);
       }
       else{
+        console.log("home found");
         break homePicker;
       }
     }
     var dest;
     do{
       dest = roads[rand(0, roads.length)];
-    }while(Math.abs(home.x - dest.x)+Math.abs(home.y - dest.y)<10)
+    }while(Math.abs(home.x - dest.x)+Math.abs(home.y - dest.y)<5)
     passengers.push(new Passenger(home.x, home.y, dest.x, dest.y, passengers.length+deliveryCt));
+    console.log("passenger generated")
   }
 }
 
