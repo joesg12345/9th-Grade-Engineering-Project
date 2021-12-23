@@ -47,7 +47,7 @@ var totalCost = 0;
  * @property {number} y The y coordinate of this car
  * @property {number} id The index of this car in cars, used to identify this car
  * @property {Passenger} passenger The passenger this car is assigned to
- * @property {Object[]} que The cells with cost i that this car is considering for paths
+ * @property {Object[]} queue The cells with cost i that this car is considering for paths
  * @property {Object} [sprite] The p5 sprite used to represent this car in graphic tests 
 */
 class Car{
@@ -63,7 +63,7 @@ class Car{
     this.id = id;
     this.status = -1;
     this.passenger = null;
-    this.que = [];
+    this.queue = [];
     this.path = [];
     if(inDraw){
       this.sprite = createSprite(cellSize*x+cellSize/2, cellSize*y+cellSize/2);
@@ -84,8 +84,8 @@ class Car{
     console.log("started pathfinding");
     /**The destination of the path*/
     var dest = (this.passenger.status === 1 ? {x: this.passenger.homeX, y: this.passenger.homeY} : {x: this.passenger.destX, y: this.passenger.destY});
-    //add current position to que
-    this.que = [{x: this.x, y: this.y, i: 0, direction: {x: 0, y: 0}}];
+    //add current position to queue
+    this.queue = [{x: this.x, y: this.y, i: 0, direction: {x: 0, y: 0}}];
     /**Number of timesteps from now*/
     var i = 0;
     /**Whether a path to the destination has been found */
@@ -93,7 +93,7 @@ class Car{
     while(!found){
       i++;
       //iterate over all cells from the last timestep checked
-      var filtered = this.que.filter(filterCell => {return filterCell.i === i-1});
+      var filtered = this.queue.filter(filterCell => {return filterCell.i === i-1});
       filtered.forEach(function(cell){
         var cells = adjacent(cell.x, cell.y);
         //iterate over adjacent cells
@@ -101,7 +101,7 @@ class Car{
           /**Next cell to be checked*/
           var next = {x: res.x, y: res.y, i: i, direction: {x: res.x-cell.x, y: res.y-cell.y}};
           //if open and unexplored
-          if(grid[next.x][next.y].open && !this.que.some(p => {return p.x === next.x && p.y === next.y})){
+          if(grid[next.x][next.y].open && !this.queue.some(p => {return p.x === next.x && p.y === next.y})){
             var statusOffset;
             /**Agents planned to be at same location as this at same timestep */
             var conflict = cars.find(nextCar => {
@@ -125,19 +125,19 @@ class Car{
                 console.log("conflict found");
                 //console.table(conflict.path);
                 //console.log(conflict.status, next);
-                //add last cell to que again
+                //add last cell to queue again
                 console.log(cell)
-                this.que.push({x: cell.x, y: cell.y, i: i, direction: cell.direction});
+                this.queue.push({x: cell.x, y: cell.y, i: i, direction: cell.direction});
               }
               else if(!found){
-                this.que.push(next);
+                this.queue.push(next);
                 console.log(next);
                 //checks if this car has been found yet
                 found = next.x === dest.x && next.y === dest.y;
               }
             }
             else if(!found){
-              this.que.push(next);
+              this.queue.push(next);
               console.log(next);
               found = next.x === dest.x && next.y === dest.y;
             }
@@ -151,15 +151,15 @@ class Car{
         }
       }, this);
     }
-    //console.table(this.que);
-    //start path with last element of que (the position of this car)
-    this.path = [this.que.find(cell => {if(cell.x === dest.x && cell.y === dest.y) return cell})];
+    //console.table(this.queue);
+    //start path with last element of queue (the position of this car)
+    this.path = [this.queue.find(cell => {if(cell.x === dest.x && cell.y === dest.y) return cell})];
     var i = this.path[0].i;
-    //iterate backwards through cells in que
+    //iterate backwards through cells in queue
     for(var ii = i-1; ii >= 0; ii--){
       var lastCell = this.path[-ii+i-1];
       //find the cell at the specified timestep that is adjacent to or in the same spot as the last cell
-      var cell = this.que.find(nextCell => {if(nextCell.i === ii && (adjacent(nextCell.x, nextCell.y).find(adj => {if(adj.x === lastCell.x && adj.y === lastCell.y) return adj}) || (nextCell.x === lastCell.x && nextCell.y === lastCell.y))) return nextCell});
+      var cell = this.queue.find(nextCell => {if(nextCell.i === ii && (adjacent(nextCell.x, nextCell.y).find(adj => {if(adj.x === lastCell.x && adj.y === lastCell.y) return adj}) || (nextCell.x === lastCell.x && nextCell.y === lastCell.y))) return nextCell});
       this.path.push(cell);
     }
     this.path.reverse();
@@ -291,7 +291,7 @@ function doTests(){
                   }
                   car.passenger = null;
                 }
-                car.que = [];
+                car.queue = [];
                 car.path = [];
               }
             });
@@ -386,7 +386,7 @@ function doDrive(){
       car.sprite.setVelocity(0, 0);
       if(passenger.status === 1){
         passenger.status = 2;
-        car.que = [];
+        car.queue = [];
         car.path = [];
         car.sprite.draw = function(){
           noStroke();
@@ -404,7 +404,7 @@ function doDrive(){
           car.sprite.remove();
         }
         else{
-          car.que = [];
+          car.queue = [];
           car.path = [];
           car.sprite.draw = function(){
             noStroke();
@@ -427,21 +427,21 @@ function doDrive(){
 }
 
 function dispatch(passenger){
-  var que = [{x: passenger.homeX, y: passenger.homeY, i: 0}];
+  var queue = [{x: passenger.homeX, y: passenger.homeY, i: 0}];
   var i = 0;
   var car = carAt(passenger.homeX, passenger.homeY).find(nextCar => {if(!nextCar.passenger) return nextCar});
   console.log("started searching for car");
   while(!car){
     i++;
-    var filtered = que.filter(filterCell => {return filterCell.i === i-1});
-    //console.log(que, filtered);
+    var filtered = queue.filter(filterCell => {return filterCell.i === i-1});
+    //console.log(queue, filtered);
     filtered.forEach(function(cell){
       var cells = adjacent(cell.x, cell.y);
       //console.log(cell, cells);
       cells.forEach(function(res){
         var next = {x: res.x, y: res.y, i: i};
-        if(grid[next.x][next.y].open && !que.some(p => {return p.x === next.x && p.y === next.y}) && !car){
-          que.push(next);
+        if(grid[next.x][next.y].open && !queue.some(p => {return p.x === next.x && p.y === next.y}) && !car){
+          queue.push(next);
           //console.log(carAt(next.x, next.y), next.x, next.y);
           car = carAt(next.x, next.y).find(nextCar => {if(!nextCar.passenger) return nextCar});
         }
@@ -696,12 +696,12 @@ function cellsConnected(x1, y1, x2, y2){
   if((x1 === x2 && y1 === y2) || !(grid[x1][y1].open && grid[x2][y2].open)){
     return true;
   }
-  var que = [{x: x1, y: y1, i: 0}];
+  var queue = [{x: x1, y: y1, i: 0}];
   var found = false;
   var i = 0;
   do{
     i++;
-    que.forEach(function(cell){
+    queue.forEach(function(cell){
       var cells = adjacent(cell.x, cell.y);
       cells.forEach(function(res){
         var next = {x: res.x, y: res.y, i: i}
@@ -709,15 +709,15 @@ function cellsConnected(x1, y1, x2, y2){
           found = true;
           return;
         }
-        if(grid[next.x][next.y].open && !que.some(p => {return p.x === next.x && p.y === next.y})){
-          que.push(next);
+        if(grid[next.x][next.y].open && !queue.some(p => {return p.x === next.x && p.y === next.y})){
+          queue.push(next);
         }
       })
     })
     if(found){
       return true;
     }
-  }while(que.find(element => {if(element.i === i) return element}));
+  }while(queue.find(element => {if(element.i === i) return element}));
   return false;
 }
 
