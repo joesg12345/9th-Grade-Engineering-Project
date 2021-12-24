@@ -81,7 +81,7 @@ class Car{
   }
 
   /**Finds the shortest path using the cells explored on dispatch, or explores new cells and finds the shortest path*/
-  pathfind(){
+  pathfind1(){
     //console.log("started pathfinding");
     /**The destination of the path: either the passenger or their destination depending on whether the passenger has been received*/
     var dest = (this.passenger.status === 1 ? {x: this.passenger.homeX, y: this.passenger.homeY} : {x: this.passenger.destX, y: this.passenger.destY});
@@ -219,7 +219,13 @@ function draw(){
     if(frameCount % stepSize === 0){
       generatePassengers();
       doDrive();
-    }
+      if(frameCount % (stepSize*10) === 0 && deliveryCt === passCt){
+        grid = [[]];
+        testStart = false;
+        document.getElementById("test1").style.display = "block";
+        document.getElementById("test2").style.display = "block";
+      }
+    }  
   }
   else{
     renderInstructions();
@@ -260,45 +266,7 @@ function doTests(){
           while(deliveryCt < passCt){
             timestep++;
             generatePassengers();
-            //TODO merge with doDrive() and add checks for draw loop actions
-            var passengersDelivered = [];
-            passengers.forEach(function(passenger){
-              if(!passenger.car){
-                dispatch(passenger);
-              }
-              var car = passenger.car
-              if(!car.path.length){
-                car.pathfind();
-              }
-              car.status++;
-              if(car.countSteps){
-                totalCost++;
-              }
-              if(car.path.length - car.status > 1){
-                var next = car.path[car.status+1];
-                var current = car.path[car.status];
-                car.x = next.x;
-                car.y = next.y;
-              }
-              else{
-                if(passenger.status === 1){
-                  passenger.status = 2;
-                }
-                else{
-                  deliveryCt++;
-                  passengersDelivered.push(passenger.id);
-                  if(deliveryCt + passengers.length >= passCt){
-                    car.countSteps = false;
-                  }
-                  car.passenger = null;
-                }
-                car.queue = [];
-                car.path = [];
-              }
-            });
-            passengersDelivered.forEach(function(passID){
-              passengers.splice(passengers.findIndex(pass => {return pass.id === passID}), 1);
-            });
+            doDrive();
           }
           var newTime = new Date().getTime();
           console.log(newTime-time + " ms: test "+test);
@@ -372,32 +340,40 @@ function doDrive(){
     }
     var car = passenger.car
     if(!car.path.length){
-      car.pathfind();
+      car.pathfind1();
     }
     car.status++;
-    //TODO give priority to car in front instead of first checked
+    if(car.countSteps){
+      totalCost++;
+    }
     if(car.path.length - car.status > 1){
       var next = car.path[car.status+1];
       var current = car.path[car.status];
-      car.sprite.setVelocity((next.x - current.x)*cellSize/stepSize, (next.y - current.y)*cellSize/stepSize);
-      if(!(car.x === next.x && car.y === next.y)){
-        car.sprite.pointTo(next.x*cellSize + cellSize/2, next.y*cellSize + cellSize/2);
-        car.x = next.x;
-        car.y = next.y;
+      if(car.sprite){
+        car.sprite.setVelocity((next.x - current.x)*cellSize/stepSize, (next.y - current.y)*cellSize/stepSize);
+        if(!(car.x === next.x && car.y === next.y)){
+          car.sprite.pointTo(next.x*cellSize + cellSize/2, next.y*cellSize + cellSize/2);
+        }
       }
+      car.x = next.x;
+      car.y = next.y;
     }
     else{
-      car.sprite.setVelocity(0, 0);
+      if(car.sprite){
+        car.sprite.setVelocity(0, 0);
+      }
       if(passenger.status === 1){
         passenger.status = 2;
         car.queue = [];
         car.path = [];
-        car.sprite.draw = function(){
-          noStroke();
-          fill("white");
-          rect(0, cellSize/4, cellSize/2, cellSize/4);
-          fill("blue");
-          ellipse(0, cellSize/4, cellSize/4);
+        if(car.sprite){
+          car.sprite.draw = function(){
+            noStroke();
+            fill("white");
+            rect(0, cellSize/4, cellSize/2, cellSize/4);
+            fill("blue");
+            ellipse(0, cellSize/4, cellSize/4);
+          }
         }
       }
       else{
@@ -405,15 +381,22 @@ function doDrive(){
         passengersDelivered.push(passenger.id);
         car.passenger = null;
         if(deliveryCt + passengers.length >= passCt){
-          car.sprite.remove();
+          if(car.sprite){
+            car.sprite.remove();
+          }
+          if(car.countSteps){
+            car.countSteps = false;
+          }
         }
         else{
           car.queue = [];
           car.path = [];
-          car.sprite.draw = function(){
-            noStroke();
-            fill("white");
-            rect(0, cellSize/4, cellSize/2, cellSize/4);
+          if(car.sprite){
+            car.sprite.draw = function(){
+              noStroke();
+              fill("white");
+              rect(0, cellSize/4, cellSize/2, cellSize/4);
+            }
           }
         }
       }
@@ -422,12 +405,6 @@ function doDrive(){
   passengersDelivered.forEach(function(passID){
     passengers.splice(passengers.findIndex(pass => {return pass.id === passID}), 1);
   });
-  if(frameCount % (stepSize*10) === 0 && deliveryCt === passCt){
-    grid = [[]];
-    testStart = false;
-    document.getElementById("test1").style.display = "block";
-    document.getElementById("test2").style.display = "block";
-  }  
 }
 
 function dispatch(passenger){
