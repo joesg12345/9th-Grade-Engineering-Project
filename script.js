@@ -40,6 +40,8 @@ var stepSize = 20;
 var timestep = 0;
 /**Total timestep cost of all agents paths/actions */
 var totalCost = 0;
+/**Current timestamp to be used to find elapsed time */
+var time;
 
 /**An autonomous vehicle agent
  * @typedef {Object} Car
@@ -80,9 +82,8 @@ class Car{
 
   /**Finds the shortest path using the cells explored on dispatch, or explores new cells and finds the shortest path*/
   pathfind(){
-    //if passenger has been received
-    console.log("started pathfinding");
-    /**The destination of the path*/
+    //console.log("started pathfinding");
+    /**The destination of the path: either the passenger or their destination depending on whether the passenger has been received*/
     var dest = (this.passenger.status === 1 ? {x: this.passenger.homeX, y: this.passenger.homeY} : {x: this.passenger.destX, y: this.passenger.destY});
     //add current position to queue
     this.queue = [{x: this.x, y: this.y, i: 0, direction: {x: 0, y: 0}}];
@@ -122,23 +123,23 @@ class Car{
               }).direction;
               //if one vector is a nonzero opposite and the other is zero
               if(!((conflictDirection.x && conflictDirection.x === -next.direction.x && !conflictDirection.y) || (conflictDirection.y && conflictDirection.y === -next.direction.y && !conflictDirection.x))){
-                console.log("conflict found");
+                //console.log("conflict found");
                 //console.table(conflict.path);
                 //console.log(conflict.status, next);
                 //add last cell to queue again
-                console.log(cell)
+                //console.log(cell)
                 this.queue.push({x: cell.x, y: cell.y, i: i, direction: cell.direction});
               }
               else if(!found){
                 this.queue.push(next);
-                console.log(next);
+                //console.log(next);
                 //checks if this car has been found yet
                 found = next.x === dest.x && next.y === dest.y;
               }
             }
             else if(!found){
               this.queue.push(next);
-              console.log(next);
+              //console.log(next);
               found = next.x === dest.x && next.y === dest.y;
             }
           }
@@ -238,7 +239,7 @@ function test1(){
 
 function test2(){
   instructions = "Tests Complete: Open Console For Results";
-  console.log(new Date());
+  time = new Date().getTime();
   doTests();
 }
 
@@ -299,14 +300,17 @@ function doTests(){
               passengers.splice(passengers.findIndex(pass => {return pass.id === passID}), 1);
             });
           }
-          console.log(new Date() + ": test "+test);
+          var newTime = new Date().getTime();
+          console.log(newTime-time + " ms: test "+test);
           timestepArr.push(timestep);
           totalCostArr.push(totalCost);
         }
         console.log(`Set Complete:
   No. of Agents: ${carCt}
   No. of Passengers: ${passCt}
-  Grid Side Length: ${gridSize-1}`);
+  Grid Side Length: ${(gridSize-1)/2} vertices
+  Time: ${newTime-time} ms`);
+        time = newTime;
         console.table({"Overall Solution Efficiency": timestepArr, "Total Individual Solution Efficiency": totalCostArr});
       }
       console.log("2 sets complete");
@@ -430,7 +434,7 @@ function dispatch(passenger){
   var queue = [{x: passenger.homeX, y: passenger.homeY, i: 0}];
   var i = 0;
   var car = carAt(passenger.homeX, passenger.homeY).find(nextCar => {if(!nextCar.passenger) return nextCar});
-  console.log("started searching for car");
+  //console.log("started searching for car");
   while(!car){
     i++;
     var filtered = queue.filter(filterCell => {return filterCell.i === i-1});
@@ -455,7 +459,7 @@ function dispatch(passenger){
     });
   }
   //console.log(car.x, car.y, passenger);
-  console.log(`dispatched car ${car.id} to passenger ${passenger.id}`);
+  //console.log(`dispatched car ${car.id} to passenger ${passenger.id}`);
   car.passenger = passenger;
   car.status = -1;
   passenger.car = car;
@@ -662,7 +666,7 @@ function generatePassengers(){
   /**The roads that are open for passenger destinations */
   var openForDest = roads;
   while(passengers.length < carCt && passengers.length+deliveryCt < passCt){
-    console.log("generating passenger");
+    //console.log("generating passenger");
     var home;
     homePicker:
     while(true){
@@ -672,7 +676,7 @@ function generatePassengers(){
         openForPass.splice(openForPass.findIndex(cell => {return cell.x === home.x && cell.y === home.y}), 1);
       }
       else{
-        console.log("home found");
+        //console.log("home found");
         break homePicker;
       }
     }
@@ -681,7 +685,7 @@ function generatePassengers(){
       dest = roads[rand(0, roads.length)];
     }while(Math.abs(home.x - dest.x)+Math.abs(home.y - dest.y)<5)
     passengers.push(new Passenger(home.x, home.y, dest.x, dest.y, passengers.length+deliveryCt));
-    console.log("passenger generated")
+    //console.log("passenger generated")
   }
 }
 
