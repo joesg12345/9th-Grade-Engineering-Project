@@ -25,7 +25,7 @@ var gridSize = 11;
 /**The number of blocks/obstacles to place on roads*/
 var obstCt = 20;
 /**The number of cars/agent to create */
-var carCt = 4;
+var carCt = 10;
 /**Then number of passengers that must be delivered */
 var passCt = 80;
 
@@ -42,6 +42,9 @@ var timestep = 0;
 var totalCost = 0;
 /**Current timestamp to be used to find elapsed time */
 var time;
+
+/**Which prototype to test: Control Test 0, Design 1, Design 2 */
+var design = 2;
 
 /**An autonomous vehicle agent
  * @typedef {Object} Car
@@ -80,7 +83,50 @@ class Car{
     }
   }
 
-  /**Finds the shortest path using the cells explored on dispatch, or explores new cells and finds the shortest path*/
+  /**Control - Finds the shortest path to a destination not accounting for conflicts */
+  pathfind0(){
+    /**The destination of the path: either the passenger or their destination depending on whether the passenger has been received*/
+    var dest = (this.passenger.status === 1 ? {x: this.passenger.homeX, y: this.passenger.homeY} : {x: this.passenger.destX, y: this.passenger.destY});
+    //add destination to queue
+    this.queue = [{x: dest.x, y: dest.y, i: 0, direction: {x: 0, y: 0}}];
+    /**Number of timesteps from now*/
+    var i = 0;
+    /**Whether a path has been found*/
+    var found = this.x === dest.x && this.y === dest.y;
+    while(!found){
+      i++;
+      //iterate over all cells from the last timestep checked
+      var filtered = this.queue.filter(filterCell => {return filterCell.i === i-1});
+      filtered.forEach(function(cell){
+        var cells = adjacent(cell.x, cell.y);
+        //iterate over adjacent cells
+        cells.forEach(function(res){
+          /**Next cell to be checked*/
+          var next = {x: res.x, y: res.y, i: i, direction: {x: res.x-cell.x, y: res.y-cell.y}};
+          //if open and unexplored
+          if(grid[next.x][next.y].open && !this.queue.some(p => {return p.x === next.x && p.y === next.y}) && !found){
+            this.queue.push(next);
+            //check if this car has been found
+            found = next.x === this.x && next.y === this.y;
+          }
+        }, this);
+      }, this);
+    }
+    //start path with last element of queue (the position of this car)
+    this.path = [this.queue.find(cell => {if(cell.x === this.x && cell.y === this.y) return cell})];
+    //iterate backwards over queue
+    for(var ii = i-1; ii >= 0; ii--){
+      //cell at current step adjacent to cell from last step
+      var cell = this.queue.find(nextCell => {if(nextCell.i === ii && adjacent(nextCell.x, nextCell.y).some(adj => {return adj.x === this.path[-ii+i-1].x && adj.y === this.path[-ii+i-1].y})) return nextCell});
+      this.path.push(cell);      
+    }
+    if(this.sprite && this.path.length > 1){
+      this.sprite.pointTo(this.path[1].x*cellSize+cellSize/2, this.path[1].y*cellSize+cellSize/2);
+    }
+    this.status = -1;
+  }
+
+  /**Design - Finds the shortest path to a destination accounting for conflicts*/
   pathfind1(){
     //console.log("started pathfinding");
     /**The destination of the path: either the passenger or their destination depending on whether the passenger has been received*/
@@ -107,7 +153,8 @@ class Car{
             /**Agents planned to be at same location as this at same timestep */
             var conflict = cars.find(nextCar => {
               //agents that have already been processed this timestep will have already set their positions to their next planned positions, but to find the next position of one that hasn't been processed, the index to search must be incremented
-              statusOffset = (nextCar.passenger && nextCar.passenger.id > this.passenger.id ? 1 : 0);
+              //The design check is because, for design 1, agents are processed in order by passenger, but in design 2 they are processed by agent
+              statusOffset = (design === 1 ? (nextCar.passenger && nextCar.passenger.id > this.passenger.id ? 1 : 0) : (nextCar.id > this.id ? 1 : 0));
               if(nextCar.id !== this.id && nextCar.path.some(nextCell => {
                 var nextI = nextCell.i - nextCar.status + statusOffset;
                 //same position, AND same timestep OR (timestep difference 1 AND final timestep): final timstep in path means that next timestep the car will be parked to let a passenger on or off
@@ -133,7 +180,7 @@ class Car{
               else if(!found){
                 this.queue.push(next);
                 //console.log(next);
-                //checks if this car has been found yet
+                //checks if the destination has been found yet
                 found = next.x === dest.x && next.y === dest.y;
               }
             }
@@ -143,17 +190,11 @@ class Car{
               found = next.x === dest.x && next.y === dest.y;
             }
           }
-          if(found){
-            return;
-          }
         }, this);
-        if(found){
-          return;
-        }
       }, this);
     }
     //console.table(this.queue);
-    //start path with last element of queue (the position of this car)
+    //start path with last element of queue (the destination)
     this.path = [this.queue.find(cell => {if(cell.x === dest.x && cell.y === dest.y) return cell})];
     var i = this.path[0].i;
     //iterate backwards through cells in queue
@@ -218,7 +259,16 @@ function draw(){
   if(testStart){
     if(frameCount % stepSize === 0){
       generatePassengers();
-      doDrive();
+      switch(design){
+        case 0:
+          doDrive0();
+          break;
+        case 1:
+          doDrive1();
+          break;
+        case 2:
+          doDrive2();
+      }
       if(frameCount % (stepSize*10) === 0 && deliveryCt === passCt){
         grid = [[]];
         testStart = false;
@@ -266,7 +316,16 @@ function doTests(){
           while(deliveryCt < passCt){
             timestep++;
             generatePassengers();
-            doDrive();
+            switch(design){
+              case 0:
+                doDrive0();
+                break;
+              case 1:
+                doDrive1();
+                break;
+              case 2:
+                doDrive2();
+            }
           }
           var newTime = new Date().getTime();
           console.log(newTime-time + " ms: test "+test);
@@ -308,8 +367,8 @@ function renderGrid(){
       if(cell.open){
         fill("grey");
         rect(cellSize*x, cellSize*y, cellSize);
-        var passHome = passAt(x, y, true);
-        if(passHome && passHome.status < 2){
+        var passHome = passAt(x, y, true).find(pass => {if(pass.status<2) return pass});
+        if(passHome){
           fill("lime");
           if(passHome.car){
             fill("blue")
@@ -317,7 +376,7 @@ function renderGrid(){
           ellipse(cellSize*x+cellSize/2, cellSize*y+cellSize/2, cellSize/2);
         }
         var passDest = passAt(x, y, false);
-        if(passDest){
+        if(passDest.length){
           fill("red");
           //triangle
           beginShape();
@@ -331,38 +390,55 @@ function renderGrid(){
   });
 }
 
-function doDrive(){
+function doDrive0(){
   var passengersDelivered = [];
   passengers.forEach(function(passenger){
     if(!passenger.car){
-      //console.log("car needed")
       dispatch(passenger);
     }
-    var car = passenger.car
+    var car = passenger.car;
     if(!car.path.length){
-      car.pathfind1();
+      car.pathfind0();
     }
     car.status++;
     if(car.countSteps){
+      //Increment the cost tracker
       totalCost++;
     }
     if(car.path.length - car.status > 1){
-      var next = car.path[car.status+1];
-      var current = car.path[car.status];
-      if(car.sprite){
-        car.sprite.setVelocity((next.x - current.x)*cellSize/stepSize, (next.y - current.y)*cellSize/stepSize);
-        if(!(car.x === next.x && car.y === next.y)){
+      var nextCell;
+      var thisCell = car.path[car.status+1];
+      var conflict = cars.find(nextCar => {
+        if(nextCar.passenger && nextCar.passenger.id < passenger.id &&nextCar.path.length - nextCar.status > 1){
+          nextCell = nextCar.path[nextCar.status+1];
+        }
+        if(nextCell && nextCell.x === thisCell.x && nextCell.y === thisCell.y){
+          return nextCar;
+        }
+      });
+      if(conflict && !((thisCell.direction.x && thisCell.direction.x === -nextCell.direction.x && !thisCell.direction.y) || (thisCell.direction.y && thisCell.direction.y === -nextCell.direction.y && !thisCell.direction.x))){
+        car.status--;
+        if(car.sprite){
+          car.sprite.setVelocity(0, 0);
+        }
+        //TODO resolve new conflicts
+      }
+      else{
+        car.x = next.x;
+        car.y = next.y;
+        if(car.sprite){
+          car.sprite.setVelocity((next.x - current.x)*cellSize/stepSize, (next.y - current.y)*cellSize/stepSize);
           car.sprite.pointTo(next.x*cellSize + cellSize/2, next.y*cellSize + cellSize/2);
         }
       }
-      car.x = next.x;
-      car.y = next.y;
     }
     else{
       if(car.sprite){
         car.sprite.setVelocity(0, 0);
       }
+      //if the passenger was just reached
       if(passenger.status === 1){
+        //get ready to pathfind to passenger destination
         passenger.status = 2;
         car.queue = [];
         car.path = [];
@@ -376,10 +452,13 @@ function doDrive(){
           }
         }
       }
+      //if the passenger destination was just reached
       else{
+        //deliver passenger
         deliveryCt++;
         passengersDelivered.push(passenger.id);
         car.passenger = null;
+        //if there are no more passengers to deliver
         if(deliveryCt + passengers.length >= passCt){
           if(car.sprite){
             car.sprite.remove();
@@ -407,6 +486,173 @@ function doDrive(){
   });
 }
 
+function doDrive1(){
+  var passengersDelivered = [];
+  passengers.forEach(function(passenger){
+    //Unless a car has already been dispatched to this passenger
+    if(!passenger.car){
+      //console.log("car needed")
+      dispatch(passenger);
+    }
+    var car = passenger.car
+    //If the car does not already have a planned path
+    if(!car.path.length){
+      car.pathfind1();
+    }
+    car.status++;
+    //Won't execute if countSteps is false (car is no longer active) or otherwise falsy (undefined because function is being called in draw loop)
+    if(car.countSteps){
+      //Increment the cost tracker
+      totalCost++;
+    }
+    //Unless the destination has been reached
+    if(car.path.length - car.status > 1){
+      /**Next cell in path */
+      var next = car.path[car.status+1];
+      /**Current position */
+      var current = car.path[car.status];
+      //go to next cell in path
+      if(car.sprite){
+        car.sprite.setVelocity((next.x - current.x)*cellSize/stepSize, (next.y - current.y)*cellSize/stepSize);
+        if(!(car.x === next.x && car.y === next.y)){
+          car.sprite.pointTo(next.x*cellSize + cellSize/2, next.y*cellSize + cellSize/2);
+        }
+      }
+      car.x = next.x;
+      car.y = next.y;
+    }
+    else{
+      if(car.sprite){
+        car.sprite.setVelocity(0, 0);
+      }
+      //if the passenger was just reached
+      if(passenger.status === 1){
+        //get ready to pathfind to passenger destination
+        passenger.status = 2;
+        car.queue = [];
+        car.path = [];
+        if(car.sprite){
+          car.sprite.draw = function(){
+            noStroke();
+            fill("white");
+            rect(0, cellSize/4, cellSize/2, cellSize/4);
+            fill("blue");
+            ellipse(0, cellSize/4, cellSize/4);
+          }
+        }
+      }
+      //if the passenger destination was just reached
+      else{
+        //deliver passenger
+        deliveryCt++;
+        passengersDelivered.push(passenger.id);
+        car.passenger = null;
+        //if there are no more passengers to deliver
+        if(deliveryCt + passengers.length >= passCt){
+          if(car.sprite){
+            car.sprite.remove();
+          }
+          if(car.countSteps){
+            car.countSteps = false;
+          }
+        }
+        else{
+          car.queue = [];
+          car.path = [];
+          if(car.sprite){
+            car.sprite.draw = function(){
+              noStroke();
+              fill("white");
+              rect(0, cellSize/4, cellSize/2, cellSize/4);
+            }
+          }
+        }
+      }
+    }
+  });
+  //remove delivered passengers
+  passengersDelivered.forEach(function(passID){
+    passengers.splice(passengers.findIndex(pass => {return pass.id === passID}), 1);
+  });
+}
+
+function doDrive2(){
+  cars.forEach(function(car){
+    if(!car.passenger && (car.sprite || car.countSteps)){
+      dispatch2(car);
+    }
+    var passenger = car.passenger;
+    if(passenger){
+      if(!car.path.length){
+        car.pathfind1();
+      }
+      car.status++;
+      if(car.countSteps){
+        totalCost++;
+      }
+      if(car.path.length - car.status > 1){
+        var next = car.path[car.status+1];
+        var current = car.path[car.status];
+        if(car.sprite){
+          car.sprite.setVelocity((next.x - current.x)*cellSize/stepSize, (next.y - current.y)*cellSize/stepSize);
+          if(!(car.x === next.x && car.y === next.y)){
+            car.sprite.pointTo(next.x*cellSize + cellSize/2, next.y*cellSize + cellSize/2);
+          }
+        }
+        car.x = next.x
+        car.y = next.y;
+      }
+      else{
+        if(car.sprite){
+          car.sprite.setVelocity(0, 0);
+        }
+        if(passenger.status === 1){
+          passenger.status = 2;
+          car.queue = [];
+          car.path = [];
+          if(car.sprite){
+            car.sprite.draw = function(){
+              noStroke();
+              fill("white");
+              rect(0, cellSize/4, cellSize/2, cellSize/4);
+              fill("blue");
+              ellipse(0, cellSize/4, cellSize/4);
+            }
+          }
+        }
+        else{
+          deliveryCt++;
+          passengers.splice(passengers.findIndex(pass => {return pass.id === passenger.id}), 1);
+          car.passenger = null;
+          if(deliveryCt + passengers.length >= passCt){
+            if(car.sprite){
+              car.sprite.remove();
+              car.sprite = null;
+            }
+            if(car.countSteps){
+              car.countSteps = false;
+            }
+          }
+          else{
+            car.queue = [];
+            car.path = [];
+            if(car.sprite){
+              car.sprite.draw = function(){
+                noStroke();
+                fill("white");
+                rect(0, cellSize/4, cellSize/2, cellSize/4);
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+/**Dispatches the closest unassigned car to the specified passenger
+ * @param {Passenger} passenger The passenger that needs to be picked up
+ */
 function dispatch(passenger){
   var queue = [{x: passenger.homeX, y: passenger.homeY, i: 0}];
   var i = 0;
@@ -426,13 +672,7 @@ function dispatch(passenger){
           //console.log(carAt(next.x, next.y), next.x, next.y);
           car = carAt(next.x, next.y).find(nextCar => {if(!nextCar.passenger) return nextCar});
         }
-        if(car){
-          return
-        }
       });
-      if(car){
-        return;
-      }
     });
   }
   //console.log(car.x, car.y, passenger);
@@ -441,6 +681,35 @@ function dispatch(passenger){
   car.status = -1;
   passenger.car = car;
   passenger.status = 1;
+}
+
+/**Dispatches specified car to closest unassigned passenger
+ * @param {Car} car The agent to dispatch
+ */
+function dispatch2(car){
+  console.log("started searching for car");
+  var queue = [{x: car.x, y: car.y, i: 0}];
+  var i = 0;
+  var passenger = passAt(car.x, car.y, true).find(nextPass => {if(!nextPass.car) return nextPass});
+  while(!passenger){
+    i++;
+    var filtered = queue.filter(filterCell => {return filterCell.i === i-1});
+    filtered.forEach(function(cell){
+      var cells = adjacent(cell.x, cell.y);
+      cells.forEach(function(res){
+        var next = {x: res.x, y: res.y, i: i};
+        if(grid[next.x][next.y].open && !queue.some(p => {return p.x === next.x && p.y === next.y}) && !passenger){
+          queue.push(next);
+          passenger = passAt(next.x, next.y, true).find(nextPass => {if(!nextPass.car) return nextPass});
+        }
+      });
+    });
+  }
+  car.passenger = passenger;
+  car.status = -1;
+  passenger.car = car;
+  passenger.status = 1;
+  console.log(`dispatched car ${car.id} to passenger ${passenger.id}`);
 }
 
 /**Generates environment grid*/
@@ -473,7 +742,7 @@ function setupGrid(){
   for(var i = 0; i < obstCt; i++){
     var cell, obstX, obstY;
     do{
-      //Ensures that block is placed on straight stretch of road rather than intersection or grass
+      //Ensures that block is placed on straight stretch of road (edge) rather than intersection (vertex) or grass
       if(rand(0, 2)){
         obstX = rand(2, gridSize/2)*2-1;
         obstY = rand(2, gridSize/2)*2;
@@ -579,13 +848,13 @@ function logGrid(){
         if(carAt(x, y).length){
           row += "--"
         }
-        else if(passAt(x, y, true) && passAt(x, y, false)){
+        else if(passAt(x, y, true).length && passAt(x, y, false).length){
           row += "X."
         }
-        else if(passAt(x, y, true)){
+        else if(passAt(x, y, true).length){
           row += "P."
         }
-        else if(passAt(x, y, false)){
+        else if(passAt(x, y, false).length){
           row += "D."
         }
         else{
@@ -629,10 +898,10 @@ function carAt(x, y){
  * @param {number} x The x coordinate to check
  * @param {number} y The y coordinate to check
  * @param {boolean} home Whether the coordinates are the passenger's home: if false they are the passenger's destination
- * @returns {number|object} The found passenger, or if none are found, -1
+ * @returns {Passenger} An array of found passengers
 */
 function passAt(x, y, home){
-  return passengers.find(passenger => {if((home && passenger.homeX === x && passenger.homeY === y) || (!home && passenger.destX === x && passenger.destY === y)) return passenger});
+  return passengers.filter(passenger => {return (home && passenger.homeX === x && passenger.homeY === y) || (!home && passenger.destX === x && passenger.destY === y)});
 }
 
 /**Generates passengers as agents become available */
